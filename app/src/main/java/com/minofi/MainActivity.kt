@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.messaging.FirebaseMessaging
@@ -44,13 +45,21 @@ fun App(ctx: Context, trigger: Int) {
     var checks by remember { mutableStateOf<List<Check>>(emptyList()) }
     var token by remember { mutableStateOf(ctx.mp().getString("token", "") ?: "") }
     var statsTick by remember { mutableIntStateOf(0) }
+    var autoDone by remember { mutableStateOf(false) }
 
     LaunchedEffect(trigger) { checks = withContext(Dispatchers.IO) { Diagnostics.run(ctx) } }
     LaunchedEffect(Unit) {
         try {
             FirebaseMessaging.getInstance().token.addOnSuccessListener { token = it; ctx.mp().edit().putString("token", it).apply() }
         } catch (_: Exception) {}
-        while (true) { delay(3000); statsTick++ }
+        while (true) {
+            delay(3000); statsTick++
+            // Tự áp dụng 1 lần mỗi phiên khi Shizuku sẵn sàng
+            if (!autoDone && ctx.mp().getBoolean("autoapply", false) && ShizukuHelper.granted()) {
+                autoDone = true
+                withContext(Dispatchers.IO) { FixEngine.runFromPrefs(ctx) }
+            }
+        }
     }
     val st = remember(statsTick, trigger) { Probes.stats(ctx) }
     val lastMs = st.last.lastOrNull { !it.lost }?.latency
@@ -59,20 +68,19 @@ fun App(ctx: Context, trigger: Int) {
         containerColor = Black,
         bottomBar = {
             NavigationBar(containerColor = Color(0xFF141414)) {
-                val items = listOf("📡" to "FCM", "📊" to "Hệ thống", "🛠" to "Sửa lỗi")
+                val items = listOf("📡" to "FCM", "⚡" to "Fix", "💻" to "ADB", "📊" to "Hệ thống")
                 val colors = NavigationBarItemDefaults.colors(
                     selectedTextColor = Yellow, unselectedTextColor = Color.Gray, indicatorColor = Color(0xFF3A3300))
                 items.forEachIndexed { i, (icon, label) ->
                     NavigationBarItem(selected = tab == i, onClick = { tab = i },
-                        icon = { Text(icon, fontSize = 20.sp) }, label = { Text(label) }, colors = colors)
+                        icon = { Text(icon, fontSize = 20.sp) }, label = { Text(label, fontSize = 11.sp) }, colors = colors)
                 }
             }
         }
     ) { pad ->
         Column(Modifier.padding(pad).padding(horizontal = 16.dp)) {
             Text("Design by Lê Hoàng Hưng", color = Yellow, fontSize = 12.sp, fontStyle = FontStyle.Italic,
-                fontWeight = FontWeight.Medium, modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                fontWeight = FontWeight.Medium, modifier = Modifier.fillMaxWidth().padding(top = 6.dp), textAlign = TextAlign.Center)
             Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Image(painterResource(R.drawable.ic_logo), null, Modifier.size(48.dp))
                 Spacer(Modifier.width(12.dp))
@@ -85,8 +93,9 @@ fun App(ctx: Context, trigger: Int) {
             }
             when (tab) {
                 0 -> FcmScreen(ctx, checks, token, statsTick)
-                1 -> MonitorScreen(ctx)
-                else -> FixScreen(ctx, checks)
+                1 -> FixTab(ctx, checks)
+                2 -> ShellTab(ctx)
+                else -> MonitorScreen(ctx)
             }
         }
     }
