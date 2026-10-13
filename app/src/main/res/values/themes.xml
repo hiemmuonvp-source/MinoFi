@@ -1,0 +1,9 @@
+<resources>
+    <color name="mi_yellow">#FFD400</color>
+    <color name="mi_black">#0D0D0D</color>
+    <style name="Theme.MinoFi" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/mi_black</item>
+        <item name="android:navigationBarColor">@color/mi_black</item>
+        <item name="android:windowBackground">@color/mi_black</item>
+    </style>
+</resources>
