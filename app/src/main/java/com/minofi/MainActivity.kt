@@ -7,7 +7,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,37 +46,35 @@ class MainActivity : ComponentActivity() {
 fun App(ctx: Context, trigger: Int) {
     var tab by remember { mutableIntStateOf(0) }
     var checks by remember { mutableStateOf<List<Check>>(emptyList()) }
-    var token by remember { mutableStateOf(ctx.mp().getString("token", "") ?: "") }
     var statsTick by remember { mutableIntStateOf(0) }
     var autoDone by remember { mutableStateOf(false) }
+    var search by remember { mutableStateOf(false) }
 
     LaunchedEffect(trigger) { checks = withContext(Dispatchers.IO) { Diagnostics.run(ctx) } }
     LaunchedEffect(Unit) {
         try {
-            FirebaseMessaging.getInstance().token.addOnSuccessListener { token = it; ctx.mp().edit().putString("token", it).apply() }
+            FirebaseMessaging.getInstance().token.addOnSuccessListener { ctx.mp().edit().putString("token", it).apply() }
         } catch (_: Exception) {}
         while (true) {
             delay(3000); statsTick++
-            // Tự áp dụng 1 lần mỗi phiên khi Shizuku sẵn sàng
             if (!autoDone && ctx.mp().getBoolean("autoapply", false) && ShizukuHelper.granted()) {
                 autoDone = true
                 withContext(Dispatchers.IO) { FixEngine.runFromPrefs(ctx) }
             }
         }
     }
-    val st = remember(statsTick, trigger) { Probes.stats(ctx) }
-    val lastMs = st.last.lastOrNull { !it.lost }?.latency
+    val sc = remember(statsTick, trigger) { ctx.mp().getInt("fcmScore", -1) }
 
     Scaffold(
         containerColor = Black,
         bottomBar = {
             NavigationBar(containerColor = Color(0xFF141414)) {
-                val items = listOf("📡" to "FCM", "⚡" to "Fix", "💻" to "ADB", "📊" to "Hệ thống")
+                val items = listOf("📡" to "FCM", "📈" to "Tiến độ", "⚡" to "Fix", "💻" to "ADB", "📊" to "Hệ thống")
                 val colors = NavigationBarItemDefaults.colors(
                     selectedTextColor = Yellow, unselectedTextColor = Color.Gray, indicatorColor = Color(0xFF3A3300))
                 items.forEachIndexed { i, (icon, label) ->
                     NavigationBarItem(selected = tab == i, onClick = { tab = i },
-                        icon = { Text(icon, fontSize = 20.sp) }, label = { Text(label, fontSize = 11.sp) }, colors = colors)
+                        icon = { Text(icon, fontSize = 18.sp) }, label = { Text(label, fontSize = 10.sp, maxLines = 1) }, colors = colors)
                 }
             }
         }
@@ -88,15 +89,21 @@ fun App(ctx: Context, trigger: Int) {
                     Text("MinoFi", color = Yellow, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     Text("FCM Notification Fixer • Xiaomi", color = Color.LightGray, fontSize = 12.sp)
                 }
-                Chip(if (lastMs == null) "FCM: chưa đo" else "FCM: " + String.format("%.1fs", lastMs / 1000.0),
-                    if (lastMs == null) Color.Gray else latencyColor(lastMs))
+                Chip(if (sc < 0) "FCM: chưa đo" else "FCM: $sc%", if (sc < 0) Color.Gray else if (sc >= 80) Green else if (sc >= 50) Yellow else Red)
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.size(40.dp).background(Card2, CircleShape).clickable { search = true }, contentAlignment = Alignment.Center) {
+                    Text("🔍", fontSize = 18.sp)
+                }
             }
             when (tab) {
-                0 -> FcmScreen(ctx, checks, token, statsTick)
-                1 -> FixTab(ctx, checks)
-                2 -> ShellTab(ctx)
+                0 -> FcmTab(ctx)
+                1 -> ProgressTab(ctx, checks)
+                2 -> FixTab(ctx, checks)
+                3 -> ShellTab(ctx)
                 else -> MonitorScreen(ctx)
             }
         }
     }
+
+    if (search) SearchDialog(ctx, { search = false }, { tab = it })
 }
